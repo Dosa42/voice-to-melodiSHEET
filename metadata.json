@@ -1,0 +1,8 @@
+{
+  "name": "Voice Melody",
+  "description": "Live, dynamic voice to melody pitch detection and rendering using TarsosDSP.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
