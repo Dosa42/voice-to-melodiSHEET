@@ -14,8 +14,11 @@ import be.tarsos.dsp.pitch.PitchProcessor.PitchEstimationAlgorithm
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.cos
 import kotlin.math.log2
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 data class PitchEvent(
     val pitchHz: Float,
@@ -25,12 +28,52 @@ data class PitchEvent(
     val isSilence: Boolean
 )
 
+// A fast Cooley-Tukey Radix-2 FFT implementation
+object SimpleFFT {
+    fun fft(re: FloatArray, im: FloatArray) {
+        val n = re.size
+        if (n <= 1) return
+        var j = 0
+        for (i in 0 until n - 1) {
+            if (i < j) {
+                val tr = re[i]; re[i] = re[j]; re[j] = tr
+                val ti = im[i]; im[i] = im[j]; im[j] = ti
+            }
+            var m = n / 2
+            while (m >= 1 && j >= m) { j -= m; m /= 2 }
+            j += m
+        }
+        var l = 1
+        while (l < n) {
+            val step = 2 * l
+            val pi = Math.PI.toFloat()
+            for (m in 0 until l) {
+                val wr = cos(-pi * m / l)
+                val wi = sin(-pi * m / l)
+                for (i in m until n step step) {
+                    val idx = i + l
+                    val tr = wr * re[idx] - wi * im[idx]
+                    val ti = wr * im[idx] + wi * re[idx]
+                    re[idx] = re[i] - tr
+                    im[idx] = im[i] - ti
+                    re[i] += tr
+                    im[i] += ti
+                }
+            }
+            l = step
+        }
+    }
+}
+
 class AudioAnalyzer {
     private var isRecording = false
     private var thread: Thread? = null
 
     private val _pitchFlow = MutableStateFlow(PitchEvent(0f, 0f, 0, "", true))
     val pitchFlow: StateFlow<PitchEvent> = _pitchFlow.asStateFlow()
+
+    private val _fftFlow = MutableStateFlow(FloatArray(0))
+    val fftFlow: StateFlow<FloatArray> = _fftFlow.asStateFlow()
 
     fun start() {
         if (isRecording) return
@@ -76,17 +119,36 @@ class AudioAnalyzer {
                 
                 val shortBuffer = ShortArray(bufferSize)
                 val floatBuffer = FloatArray(bufferSize)
+                
+                // Buffers for FFT
+                val re = FloatArray(bufferSize)
+                val im = FloatArray(bufferSize)
+                val magnitudes = FloatArray(bufferSize / 2)
 
                 while (isRecording) {
                     val read = audioRecord.read(shortBuffer, 0, bufferSize)
                     if (read > 0) {
                         for (i in 0 until read) {
-                            floatBuffer[i] = shortBuffer[i] / 32768f
+                            val sample = shortBuffer[i] / 32768f
+                            floatBuffer[i] = sample
+                            
+                            // Apply Hann window for FFT
+                            val multiplier = 0.5f * (1f - cos(2.0 * Math.PI * i / (bufferSize - 1))).toFloat()
+                            re[i] = sample * multiplier
+                            im[i] = 0f
                         }
                         
+                        // Process Pitch
                         val audioEvent = AudioEvent(format)
                         audioEvent.floatBuffer = floatBuffer // Assign buffer directly
                         pitchProcessor.process(audioEvent)
+                        
+                        // Process Spectrogram FFT
+                        SimpleFFT.fft(re, im)
+                        for (i in 0 until bufferSize / 2) {
+                            magnitudes[i] = sqrt(re[i] * re[i] + im[i] * im[i])
+                        }
+                        _fftFlow.value = magnitudes.clone()
                     }
                 }
 

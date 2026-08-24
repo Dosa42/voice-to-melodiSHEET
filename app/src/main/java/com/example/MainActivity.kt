@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -43,11 +44,18 @@ class MainActivity : ComponentActivity() {
             }
 
             val pitchEvent by audioAnalyzer.pitchFlow.collectAsState()
+            val fftMagnitudes by audioAnalyzer.fftFlow.collectAsState()
 
-            MelodyVisualizer(
-              pitchEvent = pitchEvent,
-              modifier = Modifier.padding(innerPadding)
-            )
+            Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                MelodyVisualizer(
+                  pitchEvent = pitchEvent,
+                  modifier = Modifier.weight(1f)
+                )
+                SpectrogramVisualizer(
+                  magnitudes = fftMagnitudes,
+                  modifier = Modifier.weight(1f)
+                )
+            }
           } else {
             Box(
               modifier = Modifier.fillMaxSize().padding(innerPadding),
