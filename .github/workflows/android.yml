@@ -12,17 +12,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v5
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
 
     - name: Generate Debug Keystore
       run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+
+    - name: Generate CI Release Keystore
+      run: keytool -genkey -v -keystore my-upload-key.jks -storepass ci-password -alias upload -keypass ci-password -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Release"
 
     - name: Ensure Gradle Wrapper exists
       run: gradle wrapper
@@ -30,11 +35,34 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Run Android Lint
+      run: ./gradlew lintDebug --stacktrace
+
+    - name: Run Unit Tests
+      run: ./gradlew testDebugUnitTest --stacktrace
+
     - name: Build Debug APK
       run: ./gradlew assembleDebug --stacktrace
 
-    - name: Upload APK
-      uses: actions/upload-artifact@v5
+    - name: Build Release APK and AAB
+      env:
+        KEYSTORE_PATH: my-upload-key.jks
+        STORE_PASSWORD: ci-password
+        KEY_PASSWORD: ci-password
+      run: |
+        ./gradlew assembleRelease --stacktrace
+        ./gradlew bundleRelease --stacktrace
+
+    - name: Upload APKs
+      uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: android-apks
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*.apk
+
+    - name: Upload AAB (App Bundle)
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-aab
+        path: app/build/outputs/bundle/release/*.aab
